@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { useFirebase } from './composables/useFirebase.js';
 
-// Importa los nuevos componentes que has creado
+// Importa los componentes
 import ZoneSelector from './components/ZoneSelector.vue';
 import ReportList from './components/ReportList.vue';
 import TextReportModal from './components/TextReportModal.vue';
@@ -23,18 +23,14 @@ const message = ref('');
 const showTextReportModal = ref(false);
 const textReportContent = ref('');
 
-// Este único objeto contendrá todos los datos de los formularios
 const reportData = ref({});
 
 // ---- SINCRONIZACIÓN DE DATOS ----
-// Observa la fecha y los datos de Firebase y actualiza el formulario.
 watch([currentDate, dailyReports], () => {
   const currentDayData = dailyReports.value[currentDate.value] || {};
   const freshReportData = {};
-  // Asegura que cada zona tenga un objeto para evitar errores
   zones.forEach(zone => {
     freshReportData[zone] = { ...currentDayData[zone] };
-    // Caso especial para ZAC para asegurar que personal_incidents es un array
     if (zone === 'ZAC' && !Array.isArray(freshReportData[zone].personal_incidents)) {
         freshReportData[zone].personal_incidents = [];
     }
@@ -52,6 +48,66 @@ const formComponents = {
 };
 const activeFormComponent = computed(() => formComponents[selectedZone.value]);
 
+// ---- NUEVA FUNCIÓN DE AYUDA PARA GENERAR EL TEXTO DEL REPORTE ----
+const generateSummaryText = (report) => {
+  if (!report) return 'No hay datos para generar el reporte.';
+  
+  let text = `*Reporte Diario de Fábrica - Fecha: ${report.date || 'N/A'}*\n\n`;
+
+  // Muelles
+  const muelles = report.Muelles || {};
+  text += `*--- Muelles ---*\n`;
+  text += `Incidencias: ${muelles.incidencias || 'N/A'}\n`;
+  text += `¿Ha faltado alguien?: ${muelles.falta_alguien === 'si' ? 'Sí' : (muelles.falta_alguien === 'no' ? 'No' : 'N/A')}\n`;
+  if (muelles.falta_alguien === 'si') {
+      text += `Nombre: ${muelles.nombre_falta || 'N/A'}\n`;
+  }
+  text += `\n`;
+
+  // ZBR
+  const zbr = report.ZBR || {};
+  text += `*--- ZBR ---*\n`;
+  text += `Coordinador: ${zbr.coordinador_zbr || 'N/A'}\n`;
+  text += `Materia Prima: ${zbr.materia_prima_estado === 'buen_estado' ? 'Buen Estado' : zbr.materia_prima_estado === 'mal_estado' ? 'Mal Estado' : zbr.materia_prima_estado === 'regular' ? 'Regular' : 'N/A'}\n`;
+  if (zbr.materia_prima_estado === 'mal_estado' || zbr.materia_prima_estado === 'regular') {
+      text += `Detalles: ${zbr.materia_prima_detalles || 'N/A'}\n`;
+  }
+  text += `Incidencias: ${zbr.incidencias || 'N/A'}\n`;
+  text += `\n`;
+
+  // ZAC
+  const zac = report.ZAC || {};
+  text += `*--- ZAC ---*\n`;
+  text += `Coordinador: ${zac.coordinador_zac || 'N/A'}\n`;
+  text += `Incidencias máquinas: ${zac.incidencias_maquinas || 'N/A'}\n`;
+  text += `¿Incidencias personal?: ${zac.ha_habido_incidencias_personal === 'si' ? 'Sí' : (zac.ha_habido_incidencias_personal === 'no' ? 'No' : 'N/A')}\n`;
+  if (zac.ha_habido_incidencias_personal === 'si' && zac.personal_incidents?.length > 0) {
+      zac.personal_incidents.forEach(incident => {
+          text += `  - ${incident.name || 'N/A'} (${incident.type === 'llega_tarde' ? 'Llega Tarde' : 'No Ha Venido'})\n`;
+      });
+  }
+  text += `Estado Fruta: ${zac.estado_fruta_estado === 'buen_estado' ? 'Buen Estado' : zac.estado_fruta_estado === 'mal_estado' ? 'Mal Estado' : zac.estado_fruta_estado === 'regular' ? 'Regular' : 'N/A'}\n`;
+  if (zac.estado_fruta_estado === 'mal_estado' || zac.estado_fruta_estado === 'regular') {
+      text += `Detalles Fruta: ${zac.fruta_detalles || 'N/A'}\n`;
+  }
+  text += `\n`;
+
+  // Empaquetado
+  const empaquetado = report.Empaquetado || {};
+  text += `*--- Empaquetado ---*\n`;
+  text += `Coordinador: ${empaquetado.coordinador || 'N/A'}\n`;
+  text += `Incidencias: ${empaquetado.incidencias || 'N/A'}\n`;
+  text += `\n`;
+
+  // Maquinistas
+  const maquinistas = report.Maquinistas || {};
+  text += `*--- Maquinistas ---*\n`;
+  text += `Maquinista: ${maquinistas.maquinista || 'N/A'}\n`;
+  text += `Incidencias: ${maquinistas.incidencias || 'N/A'}\n`;
+
+  return text;
+};
+
 // ---- MANEJADORES DE EVENTOS ----
 const handleSubmitReport = async () => {
   try {
@@ -63,9 +119,21 @@ const handleSubmitReport = async () => {
         }
         reportToSave[zone] = zoneData;
     }
+
+    // 1. Guardar en Firebase
     await saveReport(currentDate.value, reportToSave);
-    message.value = 'Reporte guardado con éxito!';
-    setTimeout(() => { message.value = ''; }, 3000);
+    message.value = 'Reporte guardado con éxito! Abriendo WhatsApp...';
+
+    // 2. --- NUEVA LÓGICA PARA ENVIAR POR WHATSAPP ---
+    const phoneNumber = '34681335719'; // Número sin el '+' ni espacios
+    const summaryText = generateSummaryText(reportToSave); // Usamos la nueva función de ayuda
+    const encodedText = encodeURIComponent(summaryText); // Codificamos el texto para la URL
+    
+    // 3. Construir y abrir la URL de WhatsApp
+    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodedText}`;
+    window.open(whatsappUrl, '_blank'); // Abre en una nueva pestaña
+
+    setTimeout(() => { message.value = ''; }, 4000);
   } catch (error) {
     message.value = `Error al guardar: ${error.message}`;
   }
@@ -73,12 +141,8 @@ const handleSubmitReport = async () => {
 
 const handleDeleteReport = async (date) => {
   if (confirm(`¿Seguro que quieres eliminar el reporte del ${date}?`)) {
-    try {
-        await deleteReport(date);
-        message.value = `Reporte del ${date} eliminado.`;
-    } catch(error) {
-        message.value = `Error al eliminar: ${error.message}`;
-    }
+    await deleteReport(date).catch(err => message.value = `Error al eliminar: ${err.message}`);
+    message.value = `Reporte del ${date} eliminado.`;
   }
 };
 
@@ -88,58 +152,7 @@ const handleGenerateTextReport = () => {
     message.value = 'No hay reporte para generar.';
     return;
   }
-  
-  let text = `Reporte Diario de Fábrica - Fecha: ${report.date || 'N/A'}\n\n`;
-
-    // Muelles
-    text += `--- Muelles ---\n`;
-    text += `Incidencias: ${report.Muelles?.incidencias || 'N/A'}\n`;
-    text += `¿Ha faltado alguien?: ${report.Muelles?.falta_alguien === 'si' ? 'Sí' : (report.Muelles?.falta_alguien === 'no' ? 'No' : 'N/A')}\n`;
-    if (report.Muelles?.falta_alguien === 'si') {
-        text += `Nombre de la persona que ha faltado: ${report.Muelles?.nombre_falta || 'N/A'}\n`;
-    }
-    text += `\n`;
-
-    // ZBR
-    text += `--- ZBR ---\n`;
-    text += `Coordinador ZBR: ${report.ZBR?.coordinador_zbr || 'N/A'}\n`;
-    text += `Materia Prima: ${report.ZBR?.materia_prima_estado === 'buen_estado' ? 'Buen Estado' : (report.ZBR?.materia_prima_estado === 'mal_estado' ? 'Mal Estado' : 'N/A')}\n`;
-    if (report.ZBR?.materia_prima_estado === 'mal_estado') {
-        text += `Más datos sobre el mal estado: ${report.ZBR?.materia_prima_detalles || 'N/A'}\n`;
-    }
-    text += `Incidencias: ${report.ZBR?.incidencias || 'N/A'}\n`;
-    text += `\n`;
-
-    // ZAC
-    text += `--- ZAC ---\n`;
-    text += `Coordinador ZAC: ${report.ZAC?.coordinador_zac || 'N/A'}\n`;
-    text += `Incidencias en máquinas: ${report.ZAC?.incidencias_maquinas || 'N/A'}\n`;
-    text += `¿Ha habido incidencias con el personal?: ${report.ZAC?.ha_habido_incidencias_personal === 'si' ? 'Sí' : (report.ZAC?.ha_habido_incidencias_personal === 'no' ? 'No' : 'N/A')}\n`;
-    if (report.ZAC?.ha_habido_incidencias_personal === 'si' && report.ZAC?.personal_incidents?.length > 0) {
-        text += `Incidencias de Personal:\n`;
-        report.ZAC.personal_incidents.forEach(incident => {
-            text += `  - ${incident.name || 'N/A'} (${incident.type === 'llega_tarde' ? 'Llega Tarde' : (incident.type === 'no_ha_venido' ? 'No Ha Venido' : 'N/A')})\n`;
-        });
-    }
-    text += `Estado de la Fruta: ${report.ZAC?.estado_fruta_estado === 'buen_estado' ? 'Buen Estado' : (report.ZAC?.estado_fruta_estado === 'mal_estado' ? 'Mal Estado' : 'N/A')}\n`;
-    if (report.ZAC?.estado_fruta_estado === 'mal_estado') {
-        text += `Más datos sobre el mal estado de la fruta: ${report.ZAC?.fruta_detalles || 'N/A'}\n`;
-    }
-    text += `\n`;
-
-    // Empaquetado
-    text += `--- Empaquetado ---\n`;
-    text += `Coordinador: ${report.Empaquetado?.coordinador || 'N/A'}\n`;
-    text += `Incidencias: ${report.Empaquetado?.incidencias || 'N/A'}\n`;
-    text += `\n`;
-
-    // Maquinistas
-    text += `--- Maquinistas ---\n`;
-    text += `Maquinista: ${report.Maquinistas?.maquinista || 'N/A'}\n`;
-    text += `Incidencias: ${report.Maquinistas?.incidencias || 'N/A'}\n`;
-    text += `\n`;
-    
-  textReportContent.value = text;
+  textReportContent.value = generateSummaryText(report); // Reutilizamos la función de ayuda
   showTextReportModal.value = true;
 };
 
@@ -156,19 +169,17 @@ const handleCopyReport = async () => {
 </script>
 
 <template>
-  <!-- Pantalla de carga -->
+  <!-- El template no cambia, lo incluyo completo por si acaso -->
   <div v-if="loading" class="flex items-center justify-center min-h-screen bg-gray-100">
     <div class="text-xl font-semibold text-gray-700">Cargando aplicación...</div>
   </div>
 
-  <!-- Aplicación principal -->
   <div v-else class="min-h-screen bg-gray-100 p-4 font-sans flex flex-col items-center">
     <div class="bg-white shadow-lg rounded-xl p-6 w-full max-w-4xl border border-gray-200">
       <h1 class="text-3xl font-extrabold text-center text-indigo-800 mb-6">
         Reporte Diario de Zonas de Fábrica
       </h1>
       
-      <!-- Selector de Fecha -->
       <div class="mb-6 flex flex-col sm:flex-row items-center justify-center space-y-3 sm:space-y-0 sm:space-x-4">
         <label for="report-date" class="text-gray-700 font-semibold">Seleccionar Fecha:</label>
         <input
@@ -179,10 +190,8 @@ const handleCopyReport = async () => {
         />
       </div>
 
-      <!-- Componente Selector de Zona -->
       <ZoneSelector :zones="zones" v-model="selectedZone" />
 
-      <!-- Contenedor del Formulario Dinámico -->
       <div class="bg-gray-50 p-5 rounded-lg border border-gray-200 mb-6" v-if="reportData[selectedZone]">
         <h2 class="text-2xl font-bold text-indigo-700 mb-4 text-center">
           Reporte de la Zona: {{ selectedZone }}
@@ -190,7 +199,6 @@ const handleCopyReport = async () => {
         <component :is="activeFormComponent" v-model="reportData[selectedZone]" />
       </div>
 
-      <!-- Botones de Acción -->
       <div class="flex flex-col sm:flex-row justify-center gap-4 mt-6">
         <button @click="handleSubmitReport" class="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl">
           Guardar Reporte Diario
@@ -200,12 +208,10 @@ const handleCopyReport = async () => {
         </button>
       </div>
       
-      <!-- Mensaje para el usuario -->
       <div v-if="message" class="mt-4 p-3 rounded-lg text-center font-semibold" :class="message.includes('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'">
         {{ message }}
       </div>
 
-      <!-- Componente Modal -->
       <TextReportModal 
         v-if="showTextReportModal" 
         :content="textReportContent" 
@@ -213,7 +219,6 @@ const handleCopyReport = async () => {
         @copy="handleCopyReport" 
       />
       
-      <!-- Componente Lista de Reportes -->
       <ReportList 
         :reports="dailyReports" 
         @select-date="date => currentDate = date" 
