@@ -204,7 +204,12 @@ const handleCopyReport = async () => {
         <h2 class="text-2xl font-bold text-indigo-700 mb-4 text-center">
           Reporte de la Zona: {{ selectedZone }}
         </h2>
-        <component :is="activeFormComponent" v-model="reportData[selectedZone]" />
+       <component 
+  :is="activeFormComponent" 
+  v-if="reportData[selectedZone]" 
+  :key="`${currentDate}-${selectedZone}`" 
+  v-model="reportData[selectedZone]" 
+/>
       </div>
 
       <div class="flex flex-col sm:flex-row justify-center gap-4 mt-6">
