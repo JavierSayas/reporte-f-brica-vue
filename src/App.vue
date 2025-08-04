@@ -27,25 +27,21 @@ const whatsappReadyText = ref('');
 
 const reportData = ref({});
 
-// ---- SINCRONIZACIÓN DE DATOS (AQUÍ ESTÁ LA CORRECCIÓN) ----
+// ---- SINCRONIZACIÓN DE DATOS ----
 watch([currentDate, dailyReports], () => {
   whatsappReadyText.value = '';
   message.value = '';
   
   const currentDayData = dailyReports.value[currentDate.value] || {};
   
-  // En lugar de modificar el objeto existente, creamos uno completamente nuevo.
-  // Esto fuerza a Vue a detectar el cambio y actualizar los componentes hijos.
   const newReportData = {};
   zones.forEach(zone => {
-    // Usamos el operador de coalescencia nula (??) para asegurar que siempre haya un objeto.
     newReportData[zone] = { ...(currentDayData[zone] ?? {}) }; 
     if (zone === 'ZAC' && !Array.isArray(newReportData[zone].personal_incidents)) {
         newReportData[zone].personal_incidents = [];
     }
   });
   
-  // Reemplazamos el ref por completo, lo que garantiza la reactividad.
   reportData.value = newReportData;
   
 }, { immediate: true, deep: true });
@@ -61,15 +57,17 @@ const formComponents = {
 };
 const activeFormComponent = computed(() => formComponents[selectedZone.value]);
 
-// ---- El resto del archivo no cambia, lo incluyo por completitud ----
-
-// ---- FUNCIÓN DE AYUDA PARA GENERAR EL TEXTO DEL REPORTE ----
+// ---- FUNCIÓN DE AYUDA PARA GENERAR EL TEXTO DEL REPORTE (VERSIÓN FINAL) ----
 const generateSummaryText = (report) => {
   if (!report) return 'No hay datos para generar el reporte.';
   
-  const formatFreeText = (label, text) => {
+  // Función interna para formatear los campos de texto libre con viñetas
+  const formatFreeTextWithBullets = (label, text) => {
     if (text && text.trim() !== '') {
-      return `${label}:\n${text}\n\n`;
+      const lines = text.trim().split('\n');
+      const bulletedLines = lines.filter(line => line.trim() !== '').map(line => `• ${line.trim()}`);
+      const formattedText = bulletedLines.join('\n');
+      return `${label}:\n${formattedText}\n\n`;
     }
     return `${label}: N/A\n\n`;
   };
@@ -83,8 +81,8 @@ const generateSummaryText = (report) => {
   if (muelles.falta_alguien === 'si') {
       text += `Nombre: ${muelles.nombre_falta || 'N/A'}\n`;
   }
-  text += formatFreeText('Incidencias', muelles.incidencias);
-  
+  text += formatFreeTextWithBullets('Incidencias', muelles.incidencias);
+
   // --- ZBR ---
   const zbr = report.ZBR || {};
   text += `*--- ZBR ---*\n`;
@@ -92,11 +90,11 @@ const generateSummaryText = (report) => {
   const mpEstado = zbr.materia_prima_estado ? zbr.materia_prima_estado.replace('_', ' ') : 'N/A';
   text += `Materia Prima: ${mpEstado.charAt(0).toUpperCase() + mpEstado.slice(1)}\n`;
   if (zbr.materia_prima_estado === 'mal_estado' || zbr.materia_prima_estado === 'regular') {
-      text += formatFreeText('Detalles Materia Prima', zbr.materia_prima_detalles);
+      text += formatFreeTextWithBullets('Detalles Materia Prima', zbr.materia_prima_detalles);
   } else {
     text += '\n';
   }
-  text += formatFreeText('Incidencias', zbr.incidencias);
+  text += formatFreeTextWithBullets('Incidencias', zbr.incidencias);
 
   // --- ZAC ---
   const zac = report.ZAC || {};
@@ -111,24 +109,25 @@ const generateSummaryText = (report) => {
   const frutaEstado = zac.estado_fruta_estado ? zac.estado_fruta_estado.replace('_', ' ') : 'N/A';
   text += `Estado Fruta: ${frutaEstado.charAt(0).toUpperCase() + frutaEstado.slice(1)}\n`;
   if (zac.estado_fruta_estado === 'mal_estado' || zac.estado_fruta_estado === 'regular') {
-      text += formatFreeText('Detalles Fruta', zac.fruta_detalles);
+      text += formatFreeTextWithBullets('Detalles Fruta', zac.fruta_detalles);
   }
-  text += formatFreeText('Incidencias en máquinas', zac.incidencias_maquinas);
+  text += formatFreeTextWithBullets('Incidencias en máquinas', zac.incidencias_maquinas);
 
   // --- Empaquetado ---
   const empaquetado = report.Empaquetado || {};
   text += `*--- Empaquetado ---*\n`;
   text += `Coordinador: ${empaquetado.coordinador || 'N/A'}\n`;
-  text += formatFreeText('Incidencias', empaquetado.incidencias);
+  text += formatFreeTextWithBullets('Incidencias', empaquetado.incidencias);
 
   // --- Maquinistas ---
   const maquinistas = report.Maquinistas || {};
   text += `*--- Maquinistas ---*\n`;
   text += `Maquinista: ${maquinistas.maquinista || 'N/A'}\n`;
-  text += formatFreeText('Incidencias', maquinistas.incidencias);
+  text += formatFreeTextWithBullets('Incidencias', maquinistas.incidencias);
 
   return text.trim();
 };
+
 
 // ---- MANEJADORES DE EVENTOS ----
 const handleSubmitReport = async () => {
@@ -204,12 +203,7 @@ const handleCopyReport = async () => {
         <h2 class="text-2xl font-bold text-indigo-700 mb-4 text-center">
           Reporte de la Zona: {{ selectedZone }}
         </h2>
-       <component 
-  :is="activeFormComponent" 
-  v-if="reportData[selectedZone]" 
-  :key="`${currentDate}-${selectedZone}`" 
-  v-model="reportData[selectedZone]" 
-/>
+        <component :is="activeFormComponent" v-model="reportData[selectedZone]" />
       </div>
 
       <div class="flex flex-col sm:flex-row justify-center gap-4 mt-6">
