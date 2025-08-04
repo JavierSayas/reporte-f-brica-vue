@@ -23,15 +23,14 @@ const message = ref('');
 const showTextReportModal = ref(false);
 const textReportContent = ref('');
 
-// NUEVO: Estado para el mensaje de WhatsApp
 const whatsappReadyText = ref('');
 
 const reportData = ref({});
 
 // ---- SINCRONIZACIÓN DE DATOS ----
 watch([currentDate, dailyReports], () => {
-  whatsappReadyText.value = ''; // Limpia el mensaje de WhatsApp al cambiar de día
-  message.value = ''; // Limpia mensajes de error
+  whatsappReadyText.value = '';
+  message.value = '';
   const currentDayData = dailyReports.value[currentDate.value] || {};
   const freshReportData = {};
   zones.forEach(zone => {
@@ -53,65 +52,80 @@ const formComponents = {
 };
 const activeFormComponent = computed(() => formComponents[selectedZone.value]);
 
-// ---- FUNCIÓN DE AYUDA PARA GENERAR EL TEXTO ----
+// ---- FUNCIÓN DE AYUDA PARA GENERAR EL TEXTO DEL REPORTE ----
 const generateSummaryText = (report) => {
+  // ... (Esta función no cambia, la dejo aquí por completitud)
   if (!report) return 'No hay datos para generar el reporte.';
   
-  let text = `*Reporte Diario de Fábrica - Fecha: ${report.date || 'N/A'}*\n\n`;
-  
-  const createSection = (title, data, fields) => {
-    text += `*--- ${title} ---*\n`;
-    fields.forEach(field => {
-        let value = data?.[field.key] || 'N/A';
-        if (field.render) value = field.render(data?.[field.key]);
-        text += `${field.label}: ${value}\n`;
-    });
-    text += `\n`;
+  const formatFreeText = (label, text) => {
+    if (text && text.trim() !== '') {
+      return `${label}:\n${text}\n\n`;
+    }
+    return `${label}: N/A\n\n`;
   };
 
-  createSection('Muelles', report.Muelles, [
-      { key: 'incidencias', label: 'Incidencias' },
-      { key: 'falta_alguien', label: '¿Ha faltado alguien?', render: v => v === 'si' ? 'Sí' : (v === 'no' ? 'No' : 'N/A') },
-      ...(report.Muelles?.falta_alguien === 'si' ? [{ key: 'nombre_falta', label: 'Nombre' }] : [])
-  ]);
-  // ... (Aquí puedes completar las demás secciones con el mismo patrón si lo deseas)
-  // O mantener la versión anterior, que también funciona.
-  // Por simplicidad, pego la versión anterior que ya tenías:
-    // ZBR
-    text += `*--- ZBR ---*\n`;
-    text += `Coordinador: ${report.ZBR?.coordinador_zbr || 'N/A'}\n`;
-    text += `Materia Prima: ${report.ZBR?.materia_prima_estado?.replace('_', ' ') || 'N/A'}\n`;
-    if (report.ZBR?.materia_prima_estado === 'mal_estado' || report.ZBR?.materia_prima_estado === 'regular') {
-        text += `Detalles: ${report.ZBR?.materia_prima_detalles || 'N/A'}\n`;
-    }
-    text += `Incidencias: ${report.ZBR?.incidencias || 'N/A'}\n\n`;
-  // ... Y el resto de las zonas
-    // ZAC
-    const zac = report.ZAC || {};
-    text += `*--- ZAC ---*\n`;
-    text += `Coordinador: ${zac.coordinador_zac || 'N/A'}\n`;
-    text += `Incidencias máquinas: ${zac.incidencias_maquinas || 'N/A'}\n`;
-    text += `¿Incidencias personal?: ${zac.ha_habido_incidencias_personal === 'si' ? 'Sí' : 'No'}\n`;
-    if (zac.ha_habido_incidencias_personal === 'si' && zac.personal_incidents?.length > 0) {
-        zac.personal_incidents.forEach(incident => {
-            text += `  - ${incident.name} (${incident.type === 'llega_tarde' ? 'Llega Tarde' : 'No Ha Venido'})\n`;
-        });
-    }
-    text += `\n`;
-    // Empaquetado
-    text += `*--- Empaquetado ---*\n`;
-    text += `Coordinador: ${report.Empaquetado?.coordinador || 'N/A'}\n`;
-    text += `Incidencias: ${report.Empaquetado?.incidencias || 'N/A'}\n\n`;
-    // Maquinistas
-    text += `*--- Maquinistas ---*\n`;
-    text += `Maquinista: ${report.Maquinistas?.maquinista || 'N/A'}\n`;
-    text += `Incidencias: ${report.Maquinistas?.incidencias || 'N/A'}\n`;
-  return text;
+  let text = `*Reporte Diario de Fábrica - Fecha: ${report.date || 'N/A'}*\n\n`;
+
+  // --- Muelles ---
+  const muelles = report.Muelles || {};
+  text += `*--- Muelles ---*\n`;
+  text += `¿Ha faltado alguien?: ${muelles.falta_alguien === 'si' ? 'Sí' : (muelles.falta_alguien === 'no' ? 'No' : 'N/A')}\n`;
+  if (muelles.falta_alguien === 'si') {
+      text += `Nombre: ${muelles.nombre_falta || 'N/A'}\n`;
+  }
+  text += formatFreeText('Incidencias', muelles.incidencias);
+  
+  // ... (resto de la lógica de generación de texto)
+  // --- ZBR ---
+  const zbr = report.ZBR || {};
+  text += `*--- ZBR ---*\n`;
+  text += `Coordinador: ${zbr.coordinador_zbr || 'N/A'}\n`;
+  const mpEstado = zbr.materia_prima_estado ? zbr.materia_prima_estado.replace('_', ' ') : 'N/A';
+  text += `Materia Prima: ${mpEstado.charAt(0).toUpperCase() + mpEstado.slice(1)}\n`;
+  if (zbr.materia_prima_estado === 'mal_estado' || zbr.materia_prima_estado === 'regular') {
+      text += formatFreeText('Detalles Materia Prima', zbr.materia_prima_detalles);
+  } else {
+    text += '\n';
+  }
+  text += formatFreeText('Incidencias', zbr.incidencias);
+
+  // --- ZAC ---
+  const zac = report.ZAC || {};
+  text += `*--- ZAC ---*\n`;
+  text += `Coordinador: ${zac.coordinador_zac || 'N/A'}\n`;
+  text += `¿Incidencias personal?: ${zac.ha_habido_incidencias_personal === 'si' ? 'Sí' : (zac.ha_habido_incidencias_personal === 'no' ? 'No' : 'N/A')}\n`;
+  if (zac.ha_habido_incidencias_personal === 'si' && zac.personal_incidents?.length > 0) {
+      zac.personal_incidents.forEach(incident => {
+          text += `  - ${incident.name} (${incident.type === 'llega_tarde' ? 'Llega Tarde' : 'No Ha Venido'})\n`;
+      });
+  }
+  const frutaEstado = zac.estado_fruta_estado ? zac.estado_fruta_estado.replace('_', ' ') : 'N/A';
+  text += `Estado Fruta: ${frutaEstado.charAt(0).toUpperCase() + frutaEstado.slice(1)}\n`;
+  if (zac.estado_fruta_estado === 'mal_estado' || zac.estado_fruta_estado === 'regular') {
+      text += formatFreeText('Detalles Fruta', zac.fruta_detalles);
+  }
+  text += formatFreeText('Incidencias en máquinas', zac.incidencias_maquinas);
+
+  // --- Empaquetado ---
+  const empaquetado = report.Empaquetado || {};
+  text += `*--- Empaquetado ---*\n`;
+  text += `Coordinador: ${empaquetado.coordinador || 'N/A'}\n`;
+  text += formatFreeText('Incidencias', empaquetado.incidencias);
+
+  // --- Maquinistas ---
+  const maquinistas = report.Maquinistas || {};
+  text += `*--- Maquinistas ---*\n`;
+  text += `Maquinista: ${maquinistas.maquinista || 'N/A'}\n`;
+  text += formatFreeText('Incidencias', maquinistas.incidencias);
+
+
+  return text.trim();
 };
+
 
 // ---- MANEJADORES DE EVENTOS ----
 const handleSubmitReport = async () => {
-  whatsappReadyText.value = ''; // Resetea el botón de WhatsApp
+  whatsappReadyText.value = '';
   try {
     const reportToSave = { date: currentDate.value };
     zones.forEach(zone => {
@@ -124,7 +138,6 @@ const handleSubmitReport = async () => {
 
     await saveReport(currentDate.value, reportToSave);
     
-    // MODIFICADO: En lugar de abrir WhatsApp, preparamos el texto y mostramos el mensaje de éxito
     message.value = 'Reporte guardado con éxito!';
     whatsappReadyText.value = generateSummaryText(reportToSave);
 
@@ -133,7 +146,6 @@ const handleSubmitReport = async () => {
   }
 };
 
-// NUEVA FUNCIÓN: Se ejecuta al hacer clic en el nuevo botón
 const sendToWhatsApp = () => {
   if (!whatsappReadyText.value) return;
   const phoneNumber = '34681335719';
@@ -149,10 +161,15 @@ const handleDeleteReport = async (date) => {
   }
 };
 
+// ---- AQUÍ ESTÁ LA CORRECCIÓN ----
 const handleGenerateTextReport = () => {
-  const report = dailyReports.value[currentDate.value];
-  if (!report) { return; }
-  textReportContent.value = generateSummaryText(report);
+  // En lugar de usar los datos de Firebase (dailyReports)...
+  // const report = dailyReports.value[currentDate.value];
+
+  // ...usamos los datos que están actualmente en el formulario (reportData).
+  const reportToSummarize = { date: currentDate.value, ...reportData.value };
+  
+  textReportContent.value = generateSummaryText(reportToSummarize);
   showTextReportModal.value = true;
 };
 
@@ -165,6 +182,7 @@ const handleCopyReport = async () => {
 </script>
 
 <template>
+  <!-- El template no cambia -->
   <div v-if="loading" class="flex items-center justify-center min-h-screen bg-gray-100">
     <div class="text-xl font-semibold text-gray-700">Cargando aplicación...</div>
   </div>
@@ -183,7 +201,9 @@ const handleCopyReport = async () => {
       <ZoneSelector :zones="zones" v-model="selectedZone" />
 
       <div class="bg-gray-50 p-5 rounded-lg border border-gray-200 mb-6" v-if="reportData[selectedZone]">
-        <h2 class="text-2xl font-bold text-indigo-700 mb-4 text-center">Reporte de la Zona: {{ selectedZone }}</h2>
+        <h2 class="text-2xl font-bold text-indigo-700 mb-4 text-center">
+          Reporte de la Zona: {{ selectedZone }}
+        </h2>
         <component :is="activeFormComponent" v-model="reportData[selectedZone]" />
       </div>
 
@@ -196,10 +216,8 @@ const handleCopyReport = async () => {
         </button>
       </div>
       
-      <!-- MODIFICADO: Mensaje para el usuario ahora es más inteligente -->
       <div v-if="message" class="mt-4 p-3 rounded-lg text-center font-semibold" :class="message.includes('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'">
         <p>{{ message }}</p>
-        <!-- Se muestra el botón de WhatsApp solo si hay un reporte listo para enviar -->
         <button v-if="whatsappReadyText" @click="sendToWhatsApp" class="mt-2 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">
           Enviar por WhatsApp
         </button>
