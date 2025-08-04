@@ -27,20 +27,29 @@ const whatsappReadyText = ref('');
 
 const reportData = ref({});
 
-// ---- SINCRONIZACIÓN DE DATOS ----
+// ---- SINCRONIZACIÓN DE DATOS (AQUÍ ESTÁ LA CORRECCIÓN) ----
 watch([currentDate, dailyReports], () => {
   whatsappReadyText.value = '';
   message.value = '';
+  
   const currentDayData = dailyReports.value[currentDate.value] || {};
-  const freshReportData = {};
+  
+  // En lugar de modificar el objeto existente, creamos uno completamente nuevo.
+  // Esto fuerza a Vue a detectar el cambio y actualizar los componentes hijos.
+  const newReportData = {};
   zones.forEach(zone => {
-    freshReportData[zone] = { ...currentDayData[zone] };
-    if (zone === 'ZAC' && !Array.isArray(freshReportData[zone].personal_incidents)) {
-        freshReportData[zone].personal_incidents = [];
+    // Usamos el operador de coalescencia nula (??) para asegurar que siempre haya un objeto.
+    newReportData[zone] = { ...(currentDayData[zone] ?? {}) }; 
+    if (zone === 'ZAC' && !Array.isArray(newReportData[zone].personal_incidents)) {
+        newReportData[zone].personal_incidents = [];
     }
   });
-  reportData.value = freshReportData;
+  
+  // Reemplazamos el ref por completo, lo que garantiza la reactividad.
+  reportData.value = newReportData;
+  
 }, { immediate: true, deep: true });
+
 
 // Mapeo para cargar el componente de formulario dinámicamente
 const formComponents = {
@@ -52,9 +61,10 @@ const formComponents = {
 };
 const activeFormComponent = computed(() => formComponents[selectedZone.value]);
 
+// ---- El resto del archivo no cambia, lo incluyo por completitud ----
+
 // ---- FUNCIÓN DE AYUDA PARA GENERAR EL TEXTO DEL REPORTE ----
 const generateSummaryText = (report) => {
-  // ... (Esta función no cambia, la dejo aquí por completitud)
   if (!report) return 'No hay datos para generar el reporte.';
   
   const formatFreeText = (label, text) => {
@@ -64,7 +74,7 @@ const generateSummaryText = (report) => {
     return `${label}: N/A\n\n`;
   };
 
-  let text = `*Reporte Diario de Fábrica - Fecha: ${report.date || 'N/A'}*\n\n`;
+  let text = `*Reporte Diario de Fábrica - Fecha: ${report.date || currentDate.value}*\n\n`;
 
   // --- Muelles ---
   const muelles = report.Muelles || {};
@@ -75,7 +85,6 @@ const generateSummaryText = (report) => {
   }
   text += formatFreeText('Incidencias', muelles.incidencias);
   
-  // ... (resto de la lógica de generación de texto)
   // --- ZBR ---
   const zbr = report.ZBR || {};
   text += `*--- ZBR ---*\n`;
@@ -118,10 +127,8 @@ const generateSummaryText = (report) => {
   text += `Maquinista: ${maquinistas.maquinista || 'N/A'}\n`;
   text += formatFreeText('Incidencias', maquinistas.incidencias);
 
-
   return text.trim();
 };
-
 
 // ---- MANEJADORES DE EVENTOS ----
 const handleSubmitReport = async () => {
@@ -161,14 +168,8 @@ const handleDeleteReport = async (date) => {
   }
 };
 
-// ---- AQUÍ ESTÁ LA CORRECCIÓN ----
 const handleGenerateTextReport = () => {
-  // En lugar de usar los datos de Firebase (dailyReports)...
-  // const report = dailyReports.value[currentDate.value];
-
-  // ...usamos los datos que están actualmente en el formulario (reportData).
   const reportToSummarize = { date: currentDate.value, ...reportData.value };
-  
   textReportContent.value = generateSummaryText(reportToSummarize);
   showTextReportModal.value = true;
 };
@@ -182,7 +183,6 @@ const handleCopyReport = async () => {
 </script>
 
 <template>
-  <!-- El template no cambia -->
   <div v-if="loading" class="flex items-center justify-center min-h-screen bg-gray-100">
     <div class="text-xl font-semibold text-gray-700">Cargando aplicación...</div>
   </div>
