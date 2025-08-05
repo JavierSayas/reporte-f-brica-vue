@@ -108,13 +108,36 @@ const handleSubmitReport = async () => {
     message.value = `Error al guardar: ${error.message}`;
   }
 };
+
+// --- FUNCIÓN MODIFICADA PARA COMPARTIR ---
 const sendToWhatsApp = () => {
   if (!whatsappReadyText.value) return;
-  const phoneNumber = '34681335719';
+
   const encodedText = encodeURIComponent(whatsappReadyText.value);
-  const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodedText}`;
-  window.open(whatsappUrl, '_blank');
+  
+  // Detección simple para saber si el usuario está en un dispositivo móvil
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+  let whatsappUrl;
+
+  if (isMobile) {
+    // En móvil, usamos el protocolo `whatsapp://` que abre la app directamente
+    whatsappUrl = `whatsapp://send?text=${encodedText}`;
+  } else {
+    // En ordenador, usamos `wa.me` que abre WhatsApp Web o la app de escritorio
+    // Al omitir el número de teléfono, WhatsApp pide al usuario que elija un contacto.
+    whatsappUrl = `https://wa.me/?text=${encodedText}`;
+  }
+
+  // Usamos window.location.href para móvil para asegurar que abra la app
+  // y window.open para desktop para que abra en una nueva pestaña.
+  if (isMobile) {
+    window.location.href = whatsappUrl;
+  } else {
+    window.open(whatsappUrl, '_blank');
+  }
 };
+
 const handleDeleteReport = async (date) => {
   if (confirm(`¿Seguro que quieres eliminar el reporte del ${date}?`)) {
     await deleteReport(date).catch(err => message.value = `Error al eliminar: ${err.message}`);
@@ -150,8 +173,9 @@ const handleCopyReport = async () => {
       <ZoneSelector :zones="zones" v-model="selectedZone" />
 
       <div class="bg-gray-50 p-5 rounded-lg border border-gray-200 mb-6" v-if="reportData[selectedZone]">
-        <h2 class="text-2xl font-bold text-indigo-700 mb-4 text-center">Reporte de la Zona: {{ selectedZone }}</h2>
-        <!-- ESTA ES LA LÍNEA MODIFICADA -->
+        <h2 class="text-2xl font-bold text-indigo-700 mb-4 text-center">
+          Reporte de la Zona: {{ selectedZone }}
+        </h2>
         <component 
           :is="activeFormComponent" 
           :key="currentDate" 
@@ -167,12 +191,23 @@ const handleCopyReport = async () => {
       
       <div v-if="message" class="mt-4 p-3 rounded-lg text-center font-semibold" :class="message.includes('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'">
         <p>{{ message }}</p>
-        <button v-if="whatsappReadyText" @click="sendToWhatsApp" class="mt-2 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Enviar por WhatsApp</button>
+        <button v-if="whatsappReadyText" @click="sendToWhatsApp" class="mt-2 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">
+          Enviar por WhatsApp
+        </button>
       </div>
 
-      <TextReportModal v-if="showTextReportModal" :content="textReportContent" @close="showTextReportModal = false" @copy="handleCopyReport" />
+      <TextReportModal 
+        v-if="showTextReportModal" 
+        :content="textReportContent" 
+        @close="showTextReportModal = false" 
+        @copy="handleCopyReport" 
+      />
       
-      <ReportList :reports="dailyReports" @select-date="date => currentDate = date" @delete-report="handleDeleteReport" />
+      <ReportList 
+        :reports="dailyReports" 
+        @select-date="date => currentDate = date" 
+        @delete-report="handleDeleteReport"
+      />
     </div>
   </div>
 </template>
