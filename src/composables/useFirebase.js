@@ -3,8 +3,11 @@ import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
   onAuthStateChanged, 
-  signInWithEmailAndPassword, // <-- Nuevo
-  signOut                    // <-- Nuevo
+  signInWithEmailAndPassword,
+  signOut,
+  EmailAuthProvider, // <-- NUEVO
+  reauthenticateWithCredential, // <-- NUEVO
+  updatePassword // <-- NUEVO
 } from 'firebase/auth'; 
 import { getFirestore, doc, setDoc, onSnapshot, collection, query, deleteDoc } from 'firebase/firestore';
 
@@ -15,27 +18,24 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// El userId ahora empieza como nulo, se rellenará al hacer login
 const userId = ref(null); 
-const userEmail = ref(null); // Para saber qué usuario está conectado
+const userEmail = ref(null);
 const loading = ref(true);
 const dailyReports = ref({});
-let reportsListenerUnsubscribe = null; // Para poder detener el listener al hacer logout
+let reportsListenerUnsubscribe = null;
 
 export function useFirebase() {
     onAuthStateChanged(auth, (user) => {
         if (user) {
-            // Un usuario ha iniciado sesión
             userId.value = user.uid;
             userEmail.value = user.email;
-            setupReportsListener(); // Escuchamos los datos de ESTE usuario
+            setupReportsListener();
         } else {
-            // No hay nadie conectado
             userId.value = null;
             userEmail.value = null;
-            dailyReports.value = {}; // Limpiamos los datos
+            dailyReports.value = {};
             if (reportsListenerUnsubscribe) {
-                reportsListenerUnsubscribe(); // Dejamos de escuchar
+                reportsListenerUnsubscribe();
             }
         }
         loading.value = false;
@@ -43,7 +43,6 @@ export function useFirebase() {
 
     const setupReportsListener = () => {
         if (!userId.value) return;
-        // La ruta ahora vuelve a ser dinámica con el UID del usuario conectado
         const reportsRef = collection(db, `artifacts/${appId}/users/${userId.value}/dailyReports`);
         reportsListenerUnsubscribe = onSnapshot(query(reportsRef), (snapshot) => {
             const reports = {};
@@ -52,15 +51,24 @@ export function useFirebase() {
         });
     };
     
-    // --- NUEVAS FUNCIONES DE AUTENTICACIÓN ---
-    const login = async (email, password) => {
-        await signInWithEmailAndPassword(auth, email, password);
-    };
+    const login = (email, password) => signInWithEmailAndPassword(auth, email, password);
 
-    const logout = async () => {
-        await signOut(auth);
+    const logout = () => signOut(auth);
+
+    // --- NUEVA FUNCIÓN PARA CAMBIAR LA CONTRASEÑA ---
+    const changePassword = async (currentPassword, newPassword) => {
+        const user = auth.currentUser;
+        if (!user) throw new Error("No hay un usuario conectado.");
+
+        // 1. Crear credenciales con la contraseña actual para verificar al usuario
+        const credential = EmailAuthProvider.credential(user.email, currentPassword);
+
+        // 2. Re-autenticar al usuario. Esto es por seguridad.
+        await reauthenticateWithCredential(user, credential);
+
+        // 3. Si la re-autenticación es exitosa, actualizar la contraseña
+        await updatePassword(user, newPassword);
     };
-    // --- FIN NUEVAS FUNCIONES ---
 
     const saveReport = async (date, reportData) => {
         if (!userId.value) throw new Error("User not authenticated");
@@ -74,6 +82,6 @@ export function useFirebase() {
         await deleteDoc(docRef);
     };
 
-    // Exponemos las nuevas funciones y el email del usuario
-    return { userId, userEmail, loading, dailyReports, saveReport, deleteReport, login, logout };
+    // Exponemos la nueva función
+    return { userId, userEmail, loading, dailyReports, saveReport, deleteReport, login, logout, changePassword };
 }
