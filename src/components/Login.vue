@@ -1,18 +1,44 @@
 <script setup>
 import { ref } from 'vue';
+import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 
-// Este componente emitirá un evento 'login-success' cuando el login sea correcto
-const emit = defineEmits(['login-success']);
-
-// Variables para los campos del formulario
+// Variables reactivas para los campos del formulario y los mensajes
 const email = ref('');
 const password = ref('');
 const errorMessage = ref('');
 const isLoading = ref(false);
 
+// Función que se ejecuta al enviar el formulario
 const handleLogin = async () => {
-  // Aquí irá la lógica para llamar a Firebase
-  emit('login-success'); // De momento, simulamos un login exitoso
+  isLoading.value = true;
+  errorMessage.value = '';
+  const auth = getAuth();
+  
+  try {
+    // Intentamos iniciar sesión con Firebase usando el email y la contraseña
+    await signInWithEmailAndPassword(auth, email.value, password.value);
+    // Si tiene éxito, no necesitamos hacer nada.
+    // El listener onAuthStateChanged en useFirebase.js se encargará de todo.
+  } catch (error) {
+    // Si falla, mostramos un mensaje de error claro al usuario
+    switch (error.code) {
+      case 'auth/invalid-email':
+        errorMessage.value = 'El formato del correo electrónico no es válido.';
+        break;
+      case 'auth/user-not-found':
+      case 'auth/wrong-password':
+      case 'auth/invalid-credential':
+        errorMessage.value = 'Correo electrónico o contraseña incorrectos.';
+        break;
+      default:
+        errorMessage.value = 'Ha ocurrido un error inesperado al intentar iniciar sesión.';
+        console.error("Error de Firebase:", error); // Muestra el error completo en la consola para depuración
+        break;
+    }
+  } finally {
+    // Se ejecuta siempre, tanto si hay éxito como si hay error
+    isLoading.value = false;
+  }
 };
 </script>
 
