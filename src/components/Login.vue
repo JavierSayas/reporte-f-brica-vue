@@ -2,11 +2,15 @@
 import { ref } from 'vue';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 
-// Variables reactivas para los campos del formulario y los mensajes
+// Variables reactivas para el formulario
 const email = ref('');
 const password = ref('');
 const errorMessage = ref('');
 const isLoading = ref(false);
+
+// --- NUEVA VARIABLE DE ESTADO ---
+// Para controlar si la contraseña es visible. Por defecto, está oculta (false).
+const isPasswordVisible = ref(false);
 
 // Función que se ejecuta al enviar el formulario
 const handleLogin = async () => {
@@ -15,12 +19,9 @@ const handleLogin = async () => {
   const auth = getAuth();
   
   try {
-    // Intentamos iniciar sesión con Firebase usando el email y la contraseña
     await signInWithEmailAndPassword(auth, email.value, password.value);
-    // Si tiene éxito, no necesitamos hacer nada.
-    // El listener onAuthStateChanged en useFirebase.js se encargará de todo.
+    // onAuthStateChanged en useFirebase.js se encargará del resto
   } catch (error) {
-    // Si falla, mostramos un mensaje de error claro al usuario
     switch (error.code) {
       case 'auth/invalid-email':
         errorMessage.value = 'El formato del correo electrónico no es válido.';
@@ -32,11 +33,10 @@ const handleLogin = async () => {
         break;
       default:
         errorMessage.value = 'Ha ocurrido un error inesperado al intentar iniciar sesión.';
-        console.error("Error de Firebase:", error); // Muestra el error completo en la consola para depuración
+        console.error("Error de Firebase:", error);
         break;
     }
   } finally {
-    // Se ejecuta siempre, tanto si hay éxito como si hay error
     isLoading.value = false;
   }
 };
@@ -59,16 +59,36 @@ const handleLogin = async () => {
             class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"
           />
         </div>
-        <div class="mb-6">
+        
+        <!-- --- CONTENEDOR DE LA CONTRASEÑA MODIFICADO --- -->
+        <div class="mb-6 relative">
           <label for="password" class="block text-gray-700 text-sm font-bold mb-2">Contraseña:</label>
           <input
-            type="password"
+            <!-- El 'type' ahora es dinámico: 'text' si es visible, 'password' si no -->
+            :type="isPasswordVisible ? 'text' : 'password'"
             id="password"
             v-model="password"
             required
-            class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"
+            class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 pr-10"
           />
+          <!-- NUEVO BOTÓN PARA MOSTRAR/OCULTAR -->
+          <button 
+            type="button" 
+            @click="isPasswordVisible = !isPasswordVisible"
+            class="absolute inset-y-0 right-0 top-6 pr-3 flex items-center text-sm leading-5"
+            aria-label="Mostrar u ocultar contraseña"
+          >
+            <!-- Usamos un icono SVG de "ojo" que cambia -->
+            <svg v-if="!isPasswordVisible" class="h-5 w-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+              <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.022 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" />
+            </svg>
+            <svg v-else class="h-5 w-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.955 9.955 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2 2 0 012.828 2.828l1.515 1.515a4 4 0 00-5.858-5.858zM10 13a3 3 0 01-3-3l7.929-7.929A10.051 10.051 0 0119.542 10c-1.274 4.057-5.022 7-9.542 7a9.955 9.955 0 01-4.512-1.074l1.78-1.781A3 3 0 0110 13z" clip-rule="evenodd" />
+            </svg>
+          </button>
         </div>
+        
         <div class="flex items-center justify-between">
           <button 
             type="submit"
