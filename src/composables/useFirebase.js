@@ -1,6 +1,11 @@
 import { ref } from 'vue';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { 
+  getAuth, 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, // <-- Nuevo
+  signOut                    // <-- Nuevo
+} from 'firebase/auth'; 
 import { getFirestore, doc, setDoc, onSnapshot, collection, query, deleteDoc } from 'firebase/firestore';
 
 const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || '{}');
@@ -10,57 +15,65 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// --- MODIFICACIÓN 1: CREAMOS UN ID DE USUARIO COMPARTIDO ---
-const SHARED_USER_ID = 'equipo_fabrica';
-
-// El estado reactivo ahora usará este ID compartido
-const userId = ref(SHARED_USER_ID); 
+// El userId ahora empieza como nulo, se rellenará al hacer login
+const userId = ref(null); 
+const userEmail = ref(null); // Para saber qué usuario está conectado
 const loading = ref(true);
 const dailyReports = ref({});
+let reportsListenerUnsubscribe = null; // Para poder detener el listener al hacer logout
 
 export function useFirebase() {
-    // La autenticación ahora solo sirve para tener permiso, pero no usaremos el UID que nos da
-    onAuthStateChanged(auth, async (user) => {
+    onAuthStateChanged(auth, (user) => {
         if (user) {
-            // Ya tenemos el usuario autenticado, podemos cargar los datos.
-            loading.value = false;
-            setupReportsListener();
+            // Un usuario ha iniciado sesión
+            userId.value = user.uid;
+            userEmail.value = user.email;
+            setupReportsListener(); // Escuchamos los datos de ESTE usuario
         } else {
-            try {
-                await signInAnonymously(auth);
-            } catch (error) {
-                console.error("Error signing in:", error);
-                loading.value = false; // Muestra la app incluso si el login falla
+            // No hay nadie conectado
+            userId.value = null;
+            userEmail.value = null;
+            dailyReports.value = {}; // Limpiamos los datos
+            if (reportsListenerUnsubscribe) {
+                reportsListenerUnsubscribe(); // Dejamos de escuchar
             }
         }
+        loading.value = false;
     });
 
     const setupReportsListener = () => {
-        // --- MODIFICACIÓN 2: La ruta ahora usa siempre el ID compartido ---
-        const reportsRef = collection(db, `artifacts/${appId}/users/${SHARED_USER_ID}/dailyReports`);
-        const q = query(reportsRef);
-        onSnapshot(q, (snapshot) => {
+        if (!userId.value) return;
+        // La ruta ahora vuelve a ser dinámica con el UID del usuario conectado
+        const reportsRef = collection(db, `artifacts/${appId}/users/${userId.value}/dailyReports`);
+        reportsListenerUnsubscribe = onSnapshot(query(reportsRef), (snapshot) => {
             const reports = {};
-            snapshot.forEach((doc) => {
-                reports[doc.id] = doc.data();
-            });
+            snapshot.forEach((doc) => { reports[doc.id] = doc.data(); });
             dailyReports.value = reports;
-        }, (error) => {
-            console.error("Error al escuchar los reportes:", error);
         });
     };
+    
+    // --- NUEVAS FUNCIONES DE AUTENTICACIÓN ---
+    const login = async (email, password) => {
+        await signInWithEmailAndPassword(auth, email, password);
+    };
+
+    const logout = async () => {
+        await signOut(auth);
+    };
+    // --- FIN NUEVAS FUNCIONES ---
 
     const saveReport = async (date, reportData) => {
-        // --- MODIFICACIÓN 3: La ruta de guardado también usa el ID compartido ---
-        const docRef = doc(db, `artifacts/${appId}/users/${SHARED_USER_ID}/dailyReports`, date);
+        if (!userId.value) throw new Error("User not authenticated");
+        const docRef = doc(db, `artifacts/${appId}/users/${userId.value}/dailyReports`, date);
         await setDoc(docRef, reportData, { merge: true });
     };
 
     const deleteReport = async (date) => {
-        // --- MODIFICACIÓN 4: La ruta de borrado también usa el ID compartido ---
-        const docRef = doc(db, `artifacts/${appId}/users/${SHARED_USER_ID}/dailyReports`, date);
+        if (!userId.value) throw new Error("User not authenticated");
+        const docRef = doc(db, `artifacts/${appId}/users/${userId.value}/dailyReports`, date);
         await deleteDoc(docRef);
     };
 
-    return { userId, loading, dailyReports, saveReport, deleteReport };
+    // Exponemos las nuevas funciones y el email del usuario
+    return { userId, userEmail, loading, dailyReports, saveReport, deleteReport, login, logout };
 }
