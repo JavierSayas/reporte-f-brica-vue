@@ -2,32 +2,17 @@
 import { ref, computed, watch } from 'vue';
 import { useFirebase } from './composables/useFirebase.js';
 
-// Importa TODOS los componentes, incluido el nuevo modal
-import Login from './components/Login.vue';
+// Importa los componentes
 import ZoneSelector from './components/ZoneSelector.vue';
 import ReportList from './components/ReportList.vue';
 import TextReportModal from './components/TextReportModal.vue';
-import ChangePasswordModal from './components/ChangePasswordModal.vue';
 import FormMuelles from './components/forms/FormMuelles.vue';
 import FormZBR from './components/forms/FormZBR.vue';
 import FormZAC from './components/forms/FormZAC.vue';
 import FormEmpaquetado from './components/forms/FormEmpaquetado.vue';
 import FormMaquinistas from './components/forms/FormMaquinistas.vue';
 
-// Obtiene la nueva función 'changePassword' del composable
-const { 
-  loading, 
-  dailyReports, 
-  saveReport, 
-  deleteReport, 
-  userId, 
-  userEmail, 
-  logout,
-  changePassword
-} = useFirebase();
-
-// Estado para controlar la visibilidad del nuevo modal
-const showChangePasswordModal = ref(false);
+const { loading, dailyReports, saveReport, deleteReport } = useFirebase();
 
 const zones = ['Muelles', 'ZBR', 'ZAC', 'Empaquetado', 'Maquinistas'];
 const selectedZone = ref('Muelles');
@@ -61,14 +46,12 @@ const formComponents = {
 };
 const activeFormComponent = computed(() => formComponents[selectedZone.value]);
 
-// --- ESTA FUNCIÓN ES CRUCIAL Y NO PUEDE FALTAR ---
 const generateSummaryText = (report) => {
   if (!report) return 'No hay datos para generar el reporte.';
   const formatFreeTextWithBullets = (label, text) => {
     if (text && text.trim() !== '') {
-      const lines = text.trim().split('\n');
-      const bulletedLines = lines.filter(line => line.trim() !== '').map(line => `• ${line.trim()}`);
-      const formattedText = bulletedLines.join('\n');
+      const lines = text.trim().split('\n').filter(line => line.trim() !== '').map(line => `• ${line.trim()}`);
+      const formattedText = lines.join('\n');
       return `${label}:\n${formattedText}\n\n`;
     }
     return `${label}: N/A\n\n`;
@@ -125,53 +108,49 @@ const handleSubmitReport = async () => {
   }
 };
 
-const sendToWhatsApp = () => { /* ... (código que ya tienes) ... */ };
-const handleDeleteReport = async (date) => { /* ... (código que ya tienes) ... */ };
+// --- WHATSAPP URL AHORA ES UNA PROPIEDAD COMPUTADA ---
+// Es más eficiente y el código del template queda más limpio.
+const whatsappUrl = computed(() => {
+  if (!whatsappReadyText.value) return '#'; // Devuelve un enlace inofensivo si no hay texto
+
+  const encodedText = encodeURIComponent(whatsappReadyText.value);
+  
+  // Mantenemos la lógica de móvil/desktop si quieres, pero wa.me/ funciona bien en ambos
+  // Para máxima compatibilidad, dejaremos la versión simple.
+  return `https://wa.me/?text=${encodedText}`;
+});
+
+const handleDeleteReport = async (date) => {
+  if (confirm(`¿Seguro que quieres eliminar el reporte del ${date}?`)) {
+    await deleteReport(date).catch(err => message.value = `Error al eliminar: ${err.message}`);
+    message.value = `Reporte del ${date} eliminado.`;
+  }
+};
 const handleGenerateTextReport = () => {
   const reportToSummarize = { date: currentDate.value, ...reportData.value };
   textReportContent.value = generateSummaryText(reportToSummarize);
   showTextReportModal.value = true;
 };
-const handleCopyReport = async () => { /* ... (código que ya tienes) ... */ };
-
-const handleChangePassword = async (payload) => {
-  try {
-    await changePassword(payload.currentPassword, payload.newPassword);
-    message.value = '¡Contraseña cambiada con éxito!';
-    showChangePasswordModal.value = false;
-    setTimeout(() => { message.value = ''; }, 3000);
-  } catch (error) {
-    let userMessage = 'Error al cambiar la contraseña.';
-    if (error.code === 'auth/wrong-password') {
-      userMessage = 'La contraseña actual es incorrecta.';
-    }
-    message.value = userMessage;
-    console.error(error);
-  }
+const handleCopyReport = async () => {
+  await navigator.clipboard.writeText(textReportContent.value);
+  message.value = 'Reporte copiado!';
+  setTimeout(() => (message.value = ''), 3000);
 };
 </script>
 
 <template>
-  <div v-if="loading" class="flex items-center justify-center min-h-screen bg-gray-100">Cargando...</div>
-  
-  <Login v-else-if="!userId" />
+  <div v-if="loading" class="flex items-center justify-center min-h-screen bg-gray-100">
+    <div class="text-xl font-semibold text-gray-700">Cargando aplicación...</div>
+  </div>
 
   <div v-else class="min-h-screen bg-gray-100 p-4 font-sans flex flex-col items-center">
     <div class="bg-white shadow-lg rounded-xl w-full max-w-4xl border border-gray-200">
-      
       <header class="p-4 border-b border-gray-200 flex justify-between items-center flex-wrap gap-2">
         <p class="text-sm text-gray-600">
           <span class="hidden sm:inline">Conectado como:</span>
           <strong class="font-mono">{{ userEmail }}</strong>
         </p>
-        <div class="flex items-center gap-2">
-          <button @click="showChangePasswordModal = true" class="bg-gray-500 hover:bg-gray-600 text-white text-xs font-bold py-1 px-3 rounded-lg transition-colors">
-            Cambiar Contraseña
-          </button>
-          <button @click="logout" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-3 rounded-lg transition-colors">
-            Cerrar Sesión
-          </button>
-        </div>
+        <!-- ... (botones de cambiar contraseña y logout) ... -->
       </header>
       
       <main class="p-6">
@@ -201,21 +180,35 @@ const handleChangePassword = async (payload) => {
           <button @click="handleGenerateTextReport" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl">Generar Reporte de Texto</button>
         </div>
         
+        <!-- --- SECCIÓN MODIFICADA: AHORA USAMOS UN ENLACE <a> EN LUGAR DE UN BOTÓN --- -->
         <div v-if="message" class="mt-4 p-3 rounded-lg text-center font-semibold" :class="message.includes('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'">
           <p>{{ message }}</p>
-          <button v-if="whatsappReadyText" @click="sendToWhatsApp" class="mt-2 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Enviar por WhatsApp</button>
+          
+          <!-- Se muestra el enlace de WhatsApp solo si hay un reporte listo para enviar -->
+          <a 
+            v-if="whatsappReadyText" 
+            :href="whatsappUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-block mt-2 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg"
+          >
+            Enviar por WhatsApp
+          </a>
         </div>
 
-        <TextReportModal v-if="showTextReportModal" :content="textReportContent" @close="showTextReportModal = false" @copy="handleCopyReport" />
+        <TextReportModal 
+          v-if="showTextReportModal" 
+          :content="textReportContent" 
+          @close="showTextReportModal = false" 
+          @copy="handleCopyReport" 
+        />
         
-        <ReportList :reports="dailyReports" @select-date="date => currentDate = date" @delete-report="handleDeleteReport" />
+        <ReportList 
+          :reports="dailyReports" 
+          @select-date="date => currentDate = date" 
+          @delete-report="handleDeleteReport"
+        />
       </main>
     </div>
-
-    <ChangePasswordModal
-      v-if="showChangePasswordModal"
-      @close="showChangePasswordModal = false"
-      @submit="handleChangePassword"
-    />
   </div>
 </template>
